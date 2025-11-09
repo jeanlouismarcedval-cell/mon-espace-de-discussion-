@@ -1,60 +1,74 @@
+// === Import des modules ===
 const express = require("express");
 const sqlite3 = require("sqlite3").verbose();
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const path = require("path");
 
 const app = express();
-const db = new sqlite3.Database("./chat.db");
+const PORT = process.env.PORT || 3000;
 
+// === Middleware ===
 app.use(cors());
 app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, "public")));
 
-// Crée la table si elle n'existe pas
-db.run(`CREATE TABLE IF NOT EXISTS messages (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT,
-  message TEXT,
-  parent_id INTEGER DEFAULT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)`);
-
-// 🟢 Récupérer tous les messages
-app.get("/messages", (req, res) => {
-  db.all("SELECT * FROM messages ORDER BY created_at ASC", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
-  });
+// === Base de données SQLite ===
+const db = new sqlite3.Database("./chat.db", (err) => {
+  if (err) console.error("Erreur de connexion à SQLite:", err);
+  else console.log("✅ Base SQLite connectée");
 });
 
-// 🟢 Ajouter un message ou une réponse
-app.post("/messages", (req, res) => {
-  const { name, message, parent_id } = req.body;
-  if (!name || !message) return res.status(400).json({ error: "Champs manquants" });
+// === Création de la table des messages ===
+db.run(`
+  CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    message TEXT,
+    articleId TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
 
-  db.run(
-    "INSERT INTO messages (name, message, parent_id) VALUES (?, ?, ?)",
-    [name, message, parent_id || null],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ id: this.lastID });
+// === Route GET : Récupération des messages d’un article ===
+app.get("/messages", (req, res) => {
+  const { articleId } = req.query;
+  if (!articleId) return res.status(400).send("articleId manquant");
+  db.all(
+    "SELECT * FROM messages WHERE articleId = ? ORDER BY created_at DESC",
+    [articleId],
+    (err, rows) => {
+      if (err) return res.status(500).send(err.message);
+      res.send(rows);
     }
   );
 });
 
-// 🔴 Supprimer un message (et ses réponses)
+// === Route POST : Envoi d’un message ===
+app.post("/messages", (req, res) => {
+  const { name, message, articleId } = req.body;
+  if (!name || !message || !articleId)
+    return res.status(400).send("Champs manquants");
+  db.run(
+    "INSERT INTO messages (name, message, articleId) VALUES (?, ?, ?)",
+    [name, message, articleId],
+    function (err) {
+      if (err) return res.status(500).send(err.message);
+      res.send({ id: this.lastID });
+    }
+  );
+});
+
+// === Route DELETE : Suppression d’un message ===
 app.delete("/messages/:id", (req, res) => {
-  const messageId = req.params.id;
-
-  // Supprimer les réponses associées
-  db.run("DELETE FROM messages WHERE parent_id = ?", [messageId], function(err) {
-    if (err) return res.status(500).json({ error: err.message });
-
-    // Supprimer le message lui-même
-    db.run("DELETE FROM messages WHERE id = ?", [messageId], function(err2) {
-      if (err2) return res.status(500).json({ error: err2.message });
-      res.json({ success: true });
-    });
+  const { id } = req.params;
+  db.run("DELETE FROM messages WHERE id = ?", [id], function (err) {
+    if (err) return res.status(500).send(err.message);
+    res.send({ success: true });
   });
 });
 
-app.listen(3000, () => console.log("✅ Serveur de discussion sur http://localhost:3000"));
+// === Lancement du serveur ===
+app.listen(PORT, () => {
+  console.log(`🚀 Serveur en ligne sur le port ${PORT}`);
+});
