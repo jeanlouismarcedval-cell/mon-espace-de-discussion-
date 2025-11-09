@@ -6,168 +6,114 @@
   <title>Laisser un commentaire</title>
   <style>
     body {
-      background: #fafafa;
       font-family: Arial, sans-serif;
-    }
-
-    .chat-container {
-      max-width: 700px;
-      margin: 40px auto;
-      background: white;
+      background: #f4f6f8;
       padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.1);
     }
-
+    .comment-box {
+      background: #fff;
+      border-radius: 8px;
+      padding: 20px;
+      max-width: 700px;
+      margin: auto;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    }
     h2 {
       text-align: center;
       color: #333;
     }
-
-    #messageForm {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      margin-bottom: 20px;
-    }
-
-    #messageForm input, #messageForm textarea {
+    input, textarea, button {
+      width: 100%;
       padding: 10px;
-      border-radius: 6px;
+      margin-top: 8px;
+      border-radius: 5px;
       border: 1px solid #ccc;
-      font-size: 14px;
+      font-size: 15px;
     }
-
-    #messageForm button {
-      background-color: #007BFF;
+    button {
+      background-color: #007bff;
       color: white;
       border: none;
-      padding: 10px;
-      border-radius: 6px;
       cursor: pointer;
-      transition: 0.2s;
     }
-    #messageForm button:hover { background-color: #0056b3; }
-
+    button:hover {
+      background-color: #0056b3;
+    }
     .message {
-      background: #f5f5f5;
-      padding: 10px;
-      border-radius: 6px;
-      margin-bottom: 10px;
-    }
-
-    .reply {
-      margin-left: 30px;
       background: #f9f9f9;
+      border-left: 4px solid #007bff;
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 5px;
     }
-
     .message strong {
-      display: block;
-      color: #007BFF;
+      color: #007bff;
     }
-
-    .actions {
-      display: flex;
-      gap: 10px;
-      margin-top: 5px;
-    }
-
-    .reply-btn {
-      color: #007BFF;
-      cursor: pointer;
-      font-size: 13px;
-    }
-
     .delete-btn {
+      background: none;
       color: red;
+      border: none;
       cursor: pointer;
-      font-size: 13px;
-    }
-
-    .delete-btn:hover, .reply-btn:hover {
-      text-decoration: underline;
+      float: right;
     }
   </style>
 </head>
 <body>
-
-  <div class="chat-container">
+  <div class="comment-box">
     <h2>Laisser un commentaire</h2>
-    <form id="messageForm">
-      <input type="text" id="name" placeholder="Votre nom" required />
-      <textarea id="message" placeholder="Votre message..." required></textarea>
-      <button type="submit">Envoyer</button>
-    </form>
 
-    <div id="chatMessages"></div>
+    <input type="text" id="name" placeholder="Votre nom" />
+    <textarea id="message" placeholder="Votre message..." rows="4"></textarea>
+    <button onclick="sendMessage()">Envoyer</button>
+
+    <div id="messages"></div>
   </div>
 
   <script>
-    const API_URL = "http://localhost:3000";
-    let replyToId = null;
+    // === URL de ton serveur Railway ===
+    const API_URL = "https://ton-projet-production.up.railway.app";
 
-    async function fetchMessages() {
-      const res = await fetch(API_URL + "/messages");
+    // === ID de l’article courant (extrait de l’URL) ===
+    const urlParams = new URLSearchParams(window.location.search);
+    const articleId = urlParams.get("articleId") || "default";
+
+    async function loadMessages() {
+      const res = await fetch(`${API_URL}/messages?articleId=${articleId}`);
       const messages = await res.json();
-      displayMessages(messages);
-    }
-
-    function displayMessages(messages) {
-      const container = document.getElementById("chatMessages");
+      const container = document.getElementById("messages");
       container.innerHTML = "";
-
-      const buildTree = (parentId = null) =>
-        messages
-          .filter(m => m.parent_id === parentId)
-          .map(m => {
-            const replies = buildTree(m.id);
-            return `
-              <div class="message ${parentId ? 'reply' : ''}">
-                <strong>${m.name}</strong>
-                <p>${m.message}</p>
-                <div class="actions">
-                  <span class="reply-btn" onclick="replyTo(${m.id}, '${m.name}')">↩ Répondre</span>
-                  <span class="delete-btn" onclick="deleteMessage(${m.id})">🗑 Supprimer</span>
-                </div>
-                ${replies.join("")}
-              </div>`;
-          });
-
-      container.innerHTML = buildTree().join("");
+      messages.forEach((msg) => {
+        const div = document.createElement("div");
+        div.className = "message";
+        div.innerHTML = `
+          <strong>${msg.name}</strong> <small>(${new Date(msg.created_at).toLocaleString()})</small>
+          <button class="delete-btn" onclick="deleteMessage(${msg.id})">✖</button>
+          <p>${msg.message}</p>
+        `;
+        container.appendChild(div);
+      });
     }
 
-    function replyTo(id, name) {
-      replyToId = id;
-      const textarea = document.getElementById("message");
-      textarea.placeholder = `Réponse à ${name}...`;
-      textarea.focus();
+    async function sendMessage() {
+      const name = document.getElementById("name").value.trim();
+      const message = document.getElementById("message").value.trim();
+      if (!name || !message) return alert("Veuillez remplir tous les champs");
+      await fetch(`${API_URL}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, message, articleId }),
+      });
+      document.getElementById("message").value = "";
+      loadMessages();
     }
 
     async function deleteMessage(id) {
-      if (!confirm("Voulez-vous vraiment supprimer ce message ?")) return;
-      await fetch(API_URL + "/messages/" + id, { method: "DELETE" });
-      fetchMessages();
+      if (!confirm("Supprimer ce message ?")) return;
+      await fetch(`${API_URL}/messages/${id}`, { method: "DELETE" });
+      loadMessages();
     }
 
-    document.getElementById("messageForm").addEventListener("submit", async e => {
-      e.preventDefault();
-      const name = document.getElementById("name").value.trim();
-      const message = document.getElementById("message").value.trim();
-      if (!name || !message) return;
-
-      await fetch(API_URL + "/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, message, parent_id: replyToId })
-      });
-
-      document.getElementById("message").value = "";
-      document.getElementById("message").placeholder = "Votre message...";
-      replyToId = null;
-      fetchMessages();
-    });
-
-    fetchMessages();
+    loadMessages();
   </script>
 </body>
 </html>
